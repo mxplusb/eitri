@@ -1,0 +1,322 @@
+swagger: '2.0'
+
+# Document metadata
+produces: ["application/json"]
+basePath: "/v1"
+info:
+  version: "0.1.0"
+  title: Eitri
+  description: |
+    Eitri is an infrastructure management system; think Crontab as a Serve. Oftentimes, developers must keep remote IaaS-hosted virtual machines as part of testing, lab, or varying production situations. Eitri can help manage costs by shutting down these remote machines when not in use, such as at night or during the weekends, in an automated fashion. In certain situations (rare, hopefully) you may need to power on a machine which is off, or vice versa. The CLI tool, `eitri`, will allow you to perform basic `on`, `off`, and `cycle` operations on any machine configured.
+
+    #### Name
+    The dwarf [Eitri](https://en.wikipedia.org/wiki/Eitri) (pronounced E-tree), brother of Brokkr, was a renown, mythological Norse blacksmith. Loki bet his own head with Brokkr against Eitri that he would not have been able to make items that matched the craftsmanship of Freyr's ship Skidbladnir and Odin's spear Gungnir. Eitri succeeded in making the golden boar Gullinbursti, the golden ring Draupnir, and the hammer Mjöllnir.
+
+    #### Credentials
+    Eitri stores configured credentials via Redis. While they are stored in plain text, they can only be retrieved via an administrator or by yourself. When adding credentials via `eitri`, it will generate a hash for you and store it at `~/.eitri`. If calling the API manually, you will will be responsible for storing any hash uploaded. If a hash has been lost, it cannot be retrieved, so protect it!
+
+    #### Cron Expressions
+    Field name   | Mandatory? | Allowed values  | Allowed special characters
+    ----------   | ---------- | --------------  | --------------------------
+    Seconds      | Yes        | 0-59            | * / , -
+    Minutes      | Yes        | 0-59            | * / , -
+    Hours        | Yes        | 0-23            | * / , -
+    Day of month | Yes        | 1-31            | * / , - ?
+    Month        | Yes        | 1-12 or JAN-DEC | * / , -
+    Day of week  | Yes        | 0-6 or SUN-SAT  | * / , - ?
+
+    The asterisk indicates that the cron expression will match for all values of the field; e.g., using an asterisk in the 5th field (month) would indicate every month.
+
+    Slashes are used to describe increments of ranges. For example `3-59/15` in the 1st field (minutes) would indicate the 3rd minute of the hour and every 15 minutes thereafter. The form `*\/...` is equivalent to the form `first-last/...`, that is, an increment over the largest possible range of the field. The form `N/...` is accepted as meaning `N-MAX/...`, that is, starting at N, use the increment until the end of that specific range. It does not wrap around.
+
+    Commas are used to separate items of a list. For example, using `MON,WED,FRI` in the 5th field (day of week) would mean Mondays, Wednesdays and Fridays.
+
+    Hyphens are used to define ranges. For example, `9-17` would indicate every hour between 9am and 5pm inclusive.
+
+    Question mark may be used instead of `*` for leaving either day-of-month or day-of-week blank.
+
+    #### Infrastructure Notes
+    Eitri operates on behalf of the user on a scheduled basis to help manage infrastructure costs for remote IaaS providers. It can turn instances on and and off, and that is all it does. When calling a `DELETE` operation for any of the APIs (minus `/me`), it only removes the Eitri configuration. It **does not** delete the infrastructure from the remote provider. This is by design, to prevent users from accidentally deleting infrastructure.
+
+  contact:
+    name: "Mike Lloyd"
+    email: "mlloyd@pivotal.io"
+  license:
+    name: "MIT"
+    url: "https://opensource.org/licenses/MIT"
+
+externalDocs:
+  description: "Cron expression reference."
+  url: "https://godoc.org/github.com/robfig/cron"
+
+
+# Describe your paths here
+paths:
+  /me:
+    get:
+      operationId: "listUser"
+      description: "Your configurations for Eitri."
+      produces: ["application/json"]
+      parameters:
+        - $ref: "#/parameters/user"
+        - $ref: "#/parameters/userID"
+      responses:
+        200:
+          description: "OK"
+          schema:
+            $ref: "#/definitions/me"
+    post:
+      operationId: "createUser"
+      description: "Create a new Eitri user."
+      parameters:
+        - $ref: "#/parameters/user"
+        - $ref: "#/parameters/userID"
+      responses:
+        200:
+          description: "OK"
+    patch:
+      operationId: "updateUser"
+      description: "Update your user credentials."
+      consumes: ["application/json"]
+      parameters:
+        - $ref: "#/parameters/user"
+        - $ref: "#/parameters/userID"
+        - $ref: "#/parameters/credentials"
+      responses:
+        200:
+          description: "OK"
+    delete:
+      operationId: "deleteUser"
+      description: "Delete yourself from Eitri."
+      parameters:
+        - $ref: "#/parameters/user"
+        - $ref: "#/parameters/userID"
+      responses:
+        200:
+          description: "OK"
+
+
+  /{provider}:
+    get:
+      operationId: "listConfiguredProviders"
+      summary: "All configured infrastructure for a given provider."
+      parameters:
+        - $ref: "#/parameters/user"
+        - $ref: "#/parameters/provider"
+      responses:
+        200:
+          description: "OK"
+          schema:
+            $ref: "#/definitions/provider"
+        501:
+          description: "Not implemented."
+
+    post:
+      operationId: "createProvider"
+      consumes: ["application/json"]
+      description: "Add a remote cloud provider."
+      parameters:
+        - $ref: "#/parameters/user"
+        - $ref: "#/parameters/provider"
+        - $ref: "#/parameters/newProvider"
+      responses:
+        200:
+          description: "OK"
+
+    delete:
+      operationId: "deleteConfiguredProvider"
+      summary: "Deletes all configured infrastructure for a provider from Eitri."
+      parameters:
+        - $ref: "#/parameters/user"
+        - $ref: "#/parameters/provider"
+      responses:
+        200:
+          description: "OK"
+        501:
+          description: "Not implemented."
+
+
+  /{provider}/{region}:
+    parameters:
+      - $ref: "#/parameters/user"
+      - $ref: "#/parameters/provider"
+      - $ref: "#/parameters/region"
+    get:
+      operationId: "getProviderRegion"
+      description: "Infrastructure for a region."
+      responses:
+        200:
+          description: "OK"
+          schema:
+            $ref: "#/definitions/region"
+        501:
+          description: "Provider not defined for user."
+
+
+  /{provider}/{region}/{instance}:
+    get:
+      operationId: "getInstancesFromProviderRegion"
+      description: "Returns information regarding a specific instance."
+      parameters:
+        - $ref: "#/parameters/user"
+        - $ref: "#/parameters/provider"
+        - $ref: "#/parameters/region"
+        - $ref: "#/parameters/vm"
+      responses:
+        200:
+          description: "OK"
+          schema:
+            $ref: "#/definitions/vm"
+    post:
+      operationId: "createNewScheduleForInstance"
+      description: "Add a machine to Eitri."
+      consumes: ["application/"]
+      parameters:
+        - $ref: "#/parameters/user"
+        - $ref: "#/parameters/provider"
+        - $ref: "#/parameters/region"
+        - $ref: "#/parameters/vm"
+        - $ref: "#/parameters/schedule"
+      responses:
+        200:
+          description: "OK"
+        404:
+          description: "Instance not found."
+
+
+
+
+parameters:
+  user:
+    name: user
+    in: query
+    description: "Your username; how you want to be identified by Eitri. For example, `mxplusb` or `mlloyd`. Usernames are unique, so if you configure your user with `mxplusb`, and then reference a different username, it will not recognise you."
+    required: true
+    type: string
+
+  userID:
+    name: userID
+    in: query
+    description: "Your uniquely generated hash."
+    required: true
+    type: string
+
+  credentials:
+    name: credentials
+    in: body
+    description: "A set of credentials for a given cloud provider."
+    required: true
+    schema:
+      $ref: "#/definitions/client"
+
+  provider:
+    name: provider
+    in: path
+    description: "A cloud provider; i.e. `aws`, `gce`, `azure`, etc."
+    type: string
+    required: true
+
+  newProvider:
+    name: newProvider
+    in: body
+    description: "Define a new cloud provider."
+    required: true
+    schema:
+      $ref: "#/definitions/provider"
+
+  region:
+    name: region
+    in: path
+    description: "A cloud provider's internal region. This is an API mapping, and is evaluated when proxying. For example, if using the `aws` provider, GCE's `us-east1-b` region would not be valid as it is not an AWS region."
+    type: string
+    required: true
+
+  vm:
+    name: instance
+    in: path
+    description: Specific VM.
+    type: string
+    required: true
+
+  schedule:
+    name: schedule
+    in: body
+    description: "The cron schedule for a configured machine's power operations. See [here](https://godoc.org/gopkg.in/robfig/cron.v2) for reference."
+    required: true
+    schema:
+      $ref: "#/definitions/schedule"
+
+definitions:
+  me:
+    description: "Your identity within Eitri."
+    properties:
+      providers:
+        type: array
+        items:
+          type: string
+      configured:
+        type: boolean
+      clients:
+        $ref: "#/definitions/config"
+
+  schedule:
+    description: "The schedule you want your VM to be managed on. It accepts a valid cron expression."
+    properties:
+      schedule:
+        type: string
+      active:
+        type: boolean
+
+  vm:
+    type: object
+    description: "A given virtual machine running within a cloud provider's region. If configured with Eitri, `configured` will be `true`."
+    properties:
+      id:
+        type: string
+      status:
+        type: string
+      configured:
+        type: boolean
+      schedule:
+        $ref: "#/definitions/schedule"
+
+  region:
+    type: object
+    description: "A given infrastructure region within a cloud provider."
+    properties:
+      region:
+        type: string
+      instances:
+        type: array
+        items:
+          $ref: "#/definitions/vm"
+
+  provider:
+    type: object
+    description: "A cloud provider, such as AWS, GCE, or Azure."
+    properties:
+      vendor:
+        type: string
+      regions:
+        type: array
+        items:
+          $ref: "#/definitions/region"
+
+  client:
+    type: object
+    description: "Predefined credentials used to authenticate with a cloud provider on a user's behalf. Can only be retrieved by passing `user` and `userID`."
+    required: ["client_id", "client_secret", "provider"]
+    properties:
+      client_id:
+        type: string
+      client_secret:
+        type: string
+      provider:
+        type: string
+
+  config:
+    type: object
+    description: "Information regarding a client's credentials."
+    properties:
+      items:
+        $ref: "#/definitions/client"
